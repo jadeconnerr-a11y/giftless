@@ -9,27 +9,32 @@ import type { SearchFilters } from "@channel3/sdk/resources";
  * full brand catalog (capped at 5,000 by the API; ~50 paginated requests at
  * the API's max page size of 100, ~10-15s total) and matching names
  * case-insensitively. There's no server-side "filter by name" on `list`, so
- * a full scan is unavoidable — but it only has to happen once per server
- * lifetime, so the result is cached and the walk is kicked off eagerly
- * below rather than lazily on a request.
+ * a full scan is unavoidable.
+ *
+ * Cached at module scope for the life of the process/instance. On a
+ * long-running server that means once ever; on a serverless platform
+ * (Vercel) it means once per warm lambda instance — worth noting because an
+ * earlier version of this file tried to dodge that first-request cost by
+ * never blocking on it (falling back to an unrestricted search while it
+ * warmed up in the background). That's wrong here: serverless platforms
+ * suspend background work once a request's response is sent, so the
+ * "warm up in the background" promise may never get to finish, leaving
+ * every search on that instance permanently unrestricted — which then gets
+ * silently stripped to near-zero by the display-brand post-filter, since
+ * most of the general catalog isn't on the allowlist. A slow-once first
+ * search is far better than a fast search that quietly returns nothing.
  */
 const PAGE_LIMIT = 100;
 
-let resolvedIds: Set<string> | null = null;
 let pendingIds: Promise<Set<string>> | null = null;
 
 function startResolving(): Promise<Set<string>> {
   if (!pendingIds) {
-    pendingIds = resolveAllowedBrandIds()
-      .then((ids) => {
-        resolvedIds = ids;
-        return ids;
-      })
-      .catch((error: unknown) => {
-        // Don't cache a failed lookup — let the next call retry.
-        pendingIds = null;
-        throw error;
-      });
+    pendingIds = resolveAllowedBrandIds().catch((error: unknown) => {
+      // Don't cache a failed lookup — let the next call retry.
+      pendingIds = null;
+      throw error;
+    });
   }
   return pendingIds;
 }
@@ -44,34 +49,27 @@ async function resolveAllowedBrandIds(): Promise<Set<string>> {
   return ids;
 }
 
-// Warm the cache as soon as the server starts, so the multi-second catalog
-// walk overlaps with the app loading instead of stalling a user's search.
-void startResolving().catch((error: unknown) => {
-  console.error("Failed to resolve allowed brand ids:", error);
-});
-
-/** Waits for (and returns) the resolved allowlist. Only for callers that can afford to wait. */
+/** Waits for (and returns) the resolved allowlist. */
 export function getAllowedBrandIds(): Promise<Set<string>> {
   return startResolving();
 }
 
 /**
  * Narrows `filters.brand_ids` to the allowlist, defaulting to the full
- * allowlist when the caller didn't request specific brands.
- *
- * Never blocks on the catalog walk: if the allowlist isn't resolved yet
- * (server just started, or a previous attempt is still retrying) this
- * returns `filters` unchanged rather than stalling the search — a slow
- * first search would be worse than one that's briefly unrestricted while
- * the one-time warm-up finishes in the background.
+ * allowlist when the caller didn't request specific brands. Falls back to
+ * the caller's filters unchanged only if the catalog walk itself fails
+ * (e.g. a transient Channel3 API error) — a lookup hiccup shouldn't take
+ * search down entirely.
  */
 export async function restrictToAllowedBrands(filters: SearchFilters): Promise<SearchFilters> {
-  if (!resolvedIds) {
-    void startResolving().catch(() => {});
+  let allowed: Set<string>;
+  try {
+    allowed = await getAllowedBrandIds();
+  } catch {
     return filters;
   }
   const brandIds = filters.brand_ids?.length
-    ? filters.brand_ids.filter((id) => resolvedIds!.has(id))
-    : Array.from(resolvedIds);
+    ? filters.brand_ids.filter((id) => allowed.has(id))
+    : Array.from(allowed);
   return { ...filters, brand_ids: brandIds };
 }
