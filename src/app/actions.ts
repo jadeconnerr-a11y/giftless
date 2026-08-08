@@ -15,9 +15,14 @@ type OptionValue = ProductDetail.Variants.Option.Value;
  * `SEARCH_DISPLAY_LIMIT` up front would mean that post-filter (and the
  * gender/availability/brand filters) is squeezing an already-small batch,
  * making "No products found" far more likely than it needs to be.
+ *
+ * `SEARCH_FETCH_LIMIT` is capped at 30 by the Channel3 API itself, so the
+ * buffer over `SEARCH_DISPLAY_LIMIT` is thinner than it'd ideally be —
+ * occasionally fewer than 20 survive the post-filter, but this is still the
+ * best available margin.
  */
-const SEARCH_DISPLAY_LIMIT = 10;
-const SEARCH_FETCH_LIMIT = 24;
+const SEARCH_DISPLAY_LIMIT = 20;
+const SEARCH_FETCH_LIMIT = 30;
 const SIMILAR_LIMIT = 12;
 
 /**
