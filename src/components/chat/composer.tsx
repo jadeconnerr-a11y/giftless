@@ -140,7 +140,7 @@ export const Composer = React.forwardRef<ComposerHandle, ComposerProps>(function
           onChange={(event) => setText(event.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder ?? "Describe her, an occasion, a budget…"}
-          className="max-h-40 flex-1 resize-none bg-transparent py-1.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground"
+          className="max-h-40 flex-1 resize-none bg-transparent py-1.5 text-base leading-relaxed outline-none placeholder:text-muted-foreground md:text-sm"
         />
 
         <button
