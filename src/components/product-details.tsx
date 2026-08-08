@@ -331,8 +331,8 @@ function DefaultLayout() {
   return (
     <div className="flex flex-col gap-12">
       <div className="grid gap-8 md:grid-cols-2 md:items-start lg:gap-12">
-        <Gallery className="self-start md:sticky md:top-4" />
-        <div className="flex flex-col gap-6">
+        <Gallery className="min-w-0 self-start md:sticky md:top-4" />
+        <div className="flex min-w-0 flex-col gap-6">
           <Header />
           <Variants />
           <Offers />

@@ -8,7 +8,16 @@ import { filterToAllowedDisplayBrand, isAllowedBrandName } from "@/lib/allowed-b
 
 type OptionValue = ProductDetail.Variants.Option.Value;
 
-const SEARCH_LIMIT = 24;
+/**
+ * How many results to actually show per search. Kept separate from
+ * `SEARCH_FETCH_LIMIT` (the raw request to Channel3) because results still
+ * go through `filterToAllowedDisplayBrand` afterward — fetching only
+ * `SEARCH_DISPLAY_LIMIT` up front would mean that post-filter (and the
+ * gender/availability/brand filters) is squeezing an already-small batch,
+ * making "No products found" far more likely than it needs to be.
+ */
+const SEARCH_DISPLAY_LIMIT = 10;
+const SEARCH_FETCH_LIMIT = 24;
 const SIMILAR_LIMIT = 12;
 
 /**
@@ -32,9 +41,10 @@ export async function searchProducts(input: {
     base64_image: input.base64Image,
     filters: await restrictToAllowedBrands(input.filters),
     page_token: input.pageToken,
-    limit: SEARCH_LIMIT,
+    limit: SEARCH_FETCH_LIMIT,
   });
-  return { products: filterToAllowedDisplayBrand(page.products), nextPageToken: page.next_page_token };
+  const products = filterToAllowedDisplayBrand(page.products).slice(0, SEARCH_DISPLAY_LIMIT);
+  return { products, nextPageToken: page.next_page_token };
 }
 
 export async function findSimilarProducts(input: {
