@@ -3,17 +3,19 @@
 import * as React from "react";
 
 import { Composer, type ComposerHandle, type ComposerSubmitInput } from "@/components/chat/composer";
-import { HeroCollage, LEFT_SLOTS, RIGHT_SLOTS } from "@/components/chat/hero-collage";
+import { HeroCollage, LEFT_SLOTS, MobileCollageStrip, RIGHT_SLOTS } from "@/components/chat/hero-collage";
+
+const ALL_SLOTS = [...LEFT_SLOTS, ...RIGHT_SLOTS];
 
 export function EmptyState({ onSubmit }: { onSubmit: (input: ComposerSubmitInput) => void }) {
   const composerRef = React.useRef<ComposerHandle>(null);
   const fillPrompt = (prompt: string) => composerRef.current?.fillText(prompt);
 
   return (
-    <div className="flex flex-1 items-center justify-center gap-6 px-4 py-16 xl:gap-10">
+    <div className="flex flex-1 flex-col items-center justify-center gap-6 py-12 xl:flex-row xl:gap-10 xl:py-16">
       <HeroCollage side="left" slots={LEFT_SLOTS} onPromptClick={fillPrompt} />
 
-      <div className="flex flex-1 flex-col items-center justify-center gap-8 text-center">
+      <div className="flex flex-1 flex-col items-center justify-center gap-8 px-4 text-center">
         <h1 className="max-w-xl text-2xl leading-snug text-foreground sm:text-3xl">
           Welcome to <span className="font-serif italic">GIFTLESS</span>.
           <br />
@@ -27,6 +29,8 @@ export function EmptyState({ onSubmit }: { onSubmit: (input: ComposerSubmitInput
           </p>
         </div>
       </div>
+
+      <MobileCollageStrip slots={ALL_SLOTS} onPromptClick={fillPrompt} />
 
       <HeroCollage side="right" slots={RIGHT_SLOTS} onPromptClick={fillPrompt} />
     </div>

@@ -187,7 +187,8 @@ function CollageTile({
 /**
  * Freely-positioned collage of (real, swappable) photos flanking the landing
  * page's centered copy. Desktop-only (`xl:` and up) — on narrower viewports
- * there isn't room beside the centered column, so it's simply omitted.
+ * there isn't room beside the centered column, so {@link MobileCollageStrip}
+ * takes over instead.
  */
 export function HeroCollage({
   side,
@@ -204,6 +205,86 @@ export function HeroCollage({
     <div className={cn("relative hidden h-[640px] w-52 shrink-0 xl:block", className)}>
       {slots.map((slot) => (
         <CollageTile key={slot.file} slot={slot} side={side} onLabelClick={onPromptClick} />
+      ))}
+    </div>
+  );
+}
+
+function MobileCollageTile({
+  slot,
+  onLabelClick,
+}: {
+  slot: CollageSlot;
+  onLabelClick?: (prompt: string) => void;
+}) {
+  const [failed, setFailed] = React.useState(false);
+
+  const checkAlreadyFailed = React.useCallback((img: HTMLImageElement | null) => {
+    if (img && img.complete && img.naturalWidth === 0) {
+      setFailed(true);
+    }
+  }, []);
+
+  const photo = (
+    <div className="relative aspect-[3/4] w-24 shrink-0 overflow-hidden rounded-xl border border-border/60 bg-muted shadow-sm">
+      {failed ? (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-muted px-1.5 text-center">
+          <Plus className="size-4 text-muted-foreground/60" />
+          <span className="text-[8px] leading-tight font-medium text-muted-foreground">
+            public/collage/{slot.file}
+          </span>
+        </div>
+      ) : (
+        <img
+          ref={checkAlreadyFailed}
+          src={`/collage/${slot.file}`}
+          alt=""
+          className="h-full w-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      )}
+      {slot.label ? (
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-1.5 pt-4 pb-1.5">
+          <span className="text-[9px] leading-tight font-medium text-white">{slot.label}</span>
+        </div>
+      ) : null}
+    </div>
+  );
+
+  if (slot.label && slot.prompt) {
+    return (
+      <button type="button" onClick={() => onLabelClick?.(slot.prompt!)} className="shrink-0 text-left">
+        {photo}
+      </button>
+    );
+  }
+  return photo;
+}
+
+/**
+ * Mobile counterpart to {@link HeroCollage} — the same photos as a
+ * horizontally-scrollable strip instead of an absolutely-positioned side
+ * column, since there's no spare width beside the centered copy on a phone.
+ * Hidden at `xl:` and up, where `HeroCollage` takes over instead.
+ */
+export function MobileCollageStrip({
+  slots,
+  onPromptClick,
+  className,
+}: {
+  slots: CollageSlot[];
+  onPromptClick?: (prompt: string) => void;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex w-full gap-3 overflow-x-auto px-4 pb-1 xl:hidden",
+        className,
+      )}
+    >
+      {slots.map((slot) => (
+        <MobileCollageTile key={slot.file} slot={slot} onLabelClick={onPromptClick} />
       ))}
     </div>
   );
