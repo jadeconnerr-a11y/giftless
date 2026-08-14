@@ -5,6 +5,7 @@ import type { Product } from "@channel3/sdk/resources";
 import { useRouter } from "next/navigation";
 import { Gift } from "lucide-react";
 
+import { AssistantMessage } from "@/components/chat/assistant-message";
 import { ProductGrid } from "@/components/product-grid";
 import type { ChatTurn } from "@/lib/chat-store";
 
@@ -52,7 +53,7 @@ export const ChatTurnView = React.forwardRef<HTMLDivElement, ChatTurnViewProps>(
               <span>{resultsNote(turn)}</span>
             </div>
             {turn.status === "done" && turn.assistantText ? (
-              <p className="max-w-2xl text-sm leading-relaxed text-foreground">{turn.assistantText}</p>
+              <AssistantMessage text={turn.assistantText} />
             ) : null}
             {turn.status !== "error" ? (
               <ProductGrid
