@@ -1,6 +1,6 @@
 "use client";
 
-import type { ProductDetail } from "@channel3/sdk/resources";
+import type { Product } from "@channel3/sdk/resources";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -12,13 +12,24 @@ export interface ChatTurn {
   imagePreview?: string;
   imageLabel?: string;
   status: "loading" | "done" | "error";
-  products: ProductDetail[];
+  products: Product[];
+  /** The conversational agent's text reply for this turn, if it sent one. */
+  assistantText?: string | null;
+  /** Tap-ready follow-up prompts the agent offered after this turn's reply. */
+  suggestions?: string[];
 }
 
 interface ChatState {
   turns: ChatTurn[];
   filters: SearchFiltersState;
+  /**
+   * Channel3 conversation thread id. `null` until the first turn resolves and
+   * hands one back; every turn after that passes it along so the agent keeps
+   * the same thread (and its context) rather than starting fresh each time.
+   */
+  conversationId: string | null;
   setFilters: (filters: SearchFiltersState) => void;
+  setConversationId: (conversationId: string | null) => void;
   addTurn: (turn: ChatTurn) => void;
   updateTurn: (id: string, patch: Partial<ChatTurn>) => void;
   clear: () => void;
@@ -42,20 +53,26 @@ export const useChatStore = create<ChatState>()(
     (set) => ({
       turns: [],
       filters: DEFAULT_FILTERS,
+      conversationId: null,
       setFilters: (filters) => set({ filters }),
+      setConversationId: (conversationId) => set({ conversationId }),
       addTurn: (turn) => set((state) => ({ turns: [...state.turns, turn] })),
       updateTurn: (id, patch) =>
         set((state) => ({
           turns: state.turns.map((turn) => (turn.id === id ? { ...turn, ...patch } : turn)),
         })),
-      clear: () => set({ turns: [], filters: DEFAULT_FILTERS }),
+      clear: () => set({ turns: [], filters: DEFAULT_FILTERS, conversationId: null }),
     }),
     {
       name: "giftr-chat",
       storage: createJSONStorage(() =>
         typeof window === "undefined" ? noopStorage : window.sessionStorage,
       ),
-      partialize: (state) => ({ turns: state.turns, filters: state.filters }),
+      partialize: (state) => ({
+        turns: state.turns,
+        filters: state.filters,
+        conversationId: state.conversationId,
+      }),
     },
   ),
 );

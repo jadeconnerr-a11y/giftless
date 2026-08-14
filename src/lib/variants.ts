@@ -1,9 +1,7 @@
-import type { ProductDetail } from "@channel3/sdk/resources";
+import type { OptionValue, VariantOption, Variants } from "@channel3/sdk/resources";
 import { isInStock } from "@/lib/format";
 
-type Variants = ProductDetail.Variants;
-type Option = ProductDetail.Variants.Option;
-type OptionValue = ProductDetail.Variants.Option.Value;
+type Option = VariantOption;
 
 /**
  * Display tier for a variant option value. The selector renders the same

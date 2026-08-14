@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import type { ProductDetail } from "@channel3/sdk/resources";
+import type { Product } from "@channel3/sdk/resources";
 import { useRouter } from "next/navigation";
 import { Gift } from "lucide-react";
 
@@ -15,12 +15,20 @@ function resultsNote(turn: ChatTurn): string {
   return `Found ${turn.products.length} idea${turn.products.length === 1 ? "" : "s"}:`;
 }
 
-export const ChatTurnView = React.forwardRef<HTMLDivElement, { turn: ChatTurn }>(
-  function ChatTurnView({ turn }, ref) {
+export interface ChatTurnViewProps {
+  turn: ChatTurn;
+  /** Whether this is the most recent turn — suggestion chips only make sense there. */
+  isLast?: boolean;
+  /** Fired when a suggestion chip is tapped; fills the composer with that prompt. */
+  onSuggestionSelect?: (prompt: string) => void;
+}
+
+export const ChatTurnView = React.forwardRef<HTMLDivElement, ChatTurnViewProps>(
+  function ChatTurnView({ turn, isLast, onSuggestionSelect }, ref) {
     const router = useRouter();
 
-    const openProduct = (product: ProductDetail) => router.push(`/product/${product.id}`);
-    const preloadProduct = (product: ProductDetail) => router.prefetch(`/product/${product.id}`);
+    const openProduct = (product: Product) => router.push(`/product/${product.id}`);
+    const preloadProduct = (product: Product) => router.prefetch(`/product/${product.id}`);
 
     return (
       <div ref={ref} className="flex flex-col gap-4">
@@ -43,6 +51,9 @@ export const ChatTurnView = React.forwardRef<HTMLDivElement, { turn: ChatTurn }>
               <Gift className="size-3.5" />
               <span>{resultsNote(turn)}</span>
             </div>
+            {turn.status === "done" && turn.assistantText ? (
+              <p className="max-w-2xl text-sm leading-relaxed text-foreground">{turn.assistantText}</p>
+            ) : null}
             {turn.status !== "error" ? (
               <ProductGrid
                 products={turn.products}
@@ -53,6 +64,20 @@ export const ChatTurnView = React.forwardRef<HTMLDivElement, { turn: ChatTurn }>
                   openProduct(value.product_id ? { ...product, id: value.product_id } : product)
                 }
               />
+            ) : null}
+            {isLast && turn.status === "done" && turn.suggestions && turn.suggestions.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {turn.suggestions.map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    onClick={() => onSuggestionSelect?.(suggestion)}
+                    className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
             ) : null}
           </div>
         </div>

@@ -1,5 +1,5 @@
 import type {
-  AvailabilityStatus,
+  OfferAvailabilityStatus,
   Price,
   ProductImage,
   ProductOffer,
@@ -43,42 +43,34 @@ export function formatDomain(domain: string): string {
   return domain.replace(/^https?:\/\//, "").replace(/^www\./, "");
 }
 
-const IN_STOCK: ReadonlySet<AvailabilityStatus> = new Set<AvailabilityStatus>([
-  "InStock",
-  "LimitedAvailability",
-]);
-
 /**
- * The single in-stock definition used across the kit: a status is "in stock"
- * when it's `InStock` or `LimitedAvailability`. Everything else (pre-order,
- * back-order, sold out, …) reads as not in stock for lead-offer selection,
- * sold-out badges, and variant emphasis.
+ * The single in-stock definition used across the kit. The public API only
+ * ever emits `InStock`/`OutOfStock` (internal statuses like pre-order or
+ * back-order are collapsed to one of these two before reaching us), so this
+ * is now a direct equality check rather than a set membership one.
  */
-export function isInStock(status: AvailabilityStatus): boolean {
-  return IN_STOCK.has(status);
+export function isInStock(status: OfferAvailabilityStatus): boolean {
+  return status === "InStock";
 }
 
-const AVAILABILITY_LABELS: Record<AvailabilityStatus, string> = {
+const AVAILABILITY_LABELS: Record<OfferAvailabilityStatus, string> = {
   InStock: "In stock",
-  LimitedAvailability: "Limited availability",
-  PreOrder: "Pre-order",
-  BackOrder: "Back-order",
-  SoldOut: "Sold out",
   OutOfStock: "Out of stock",
-  Discontinued: "Discontinued",
-  Unknown: "Unavailable",
 };
 
 /** Human-readable label for an availability status. */
-export function availabilityLabel(status: AvailabilityStatus): string {
+export function availabilityLabel(status: OfferAvailabilityStatus): string {
   return AVAILABILITY_LABELS[status];
 }
 
 /**
  * Pick the best image to show for a product.
  *
- * `preferCleaned` favors `is_cleaned_image` shots (square, uniform background)
- * for grid/card contexts; otherwise the main image (or first image) wins.
+ * `preferCleaned` favors an image's `cleaned_url` (background-removed square
+ * shot, when the CDN has one) for grid/card contexts; otherwise the main
+ * image (or first image) wins. When a cleaned shot is used, the returned
+ * image's `url` is swapped to that `cleaned_url` so callers can keep reading
+ * a plain `.url`.
  */
 export function pickImage(
   images: ReadonlyArray<ProductImage> | undefined,
@@ -88,9 +80,9 @@ export function pickImage(
     return undefined;
   }
   if (preferCleaned) {
-    const cleaned = images.find((image) => image.is_cleaned_image);
-    if (cleaned) {
-      return cleaned;
+    const cleaned = images.find((image) => image.cleaned_url);
+    if (cleaned?.cleaned_url) {
+      return { ...cleaned, url: cleaned.cleaned_url };
     }
   }
   return images.find((image) => image.is_main_image) ?? images[0];

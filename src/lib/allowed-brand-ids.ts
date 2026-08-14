@@ -41,7 +41,10 @@ function startResolving(): Promise<Set<string>> {
 
 async function resolveAllowedBrandIds(): Promise<Set<string>> {
   const ids = new Set<string>();
-  for await (const brand of channel3.brands.list({ limit: PAGE_LIMIT })) {
+  // `list()` resolves to a `Page` (itself the async-iterable) rather than
+  // being directly `for await`-able as a promise.
+  const page = await channel3.brands.list({ limit: PAGE_LIMIT });
+  for await (const brand of page) {
     if (isAllowedBrandName(brand.name)) {
       ids.add(brand.id);
     }

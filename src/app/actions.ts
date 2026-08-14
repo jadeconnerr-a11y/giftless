@@ -1,13 +1,11 @@
 "use server";
 
-import type { Category, CategorySummary, ProductDetail, SearchFilters } from "@channel3/sdk/resources";
+import type { Category, CategorySummary, OptionValue, Product, SearchFilters } from "@channel3/sdk/resources";
 
 import { channel3 } from "@/lib/channel3";
 import { restrictToAllowedBrands } from "@/lib/allowed-brand-ids";
 import { filterToAllowedDisplayBrand, isAllowedBrandName } from "@/lib/allowed-brands";
 import { isWithinDisplayedPriceRange } from "@/lib/format";
-
-type OptionValue = ProductDetail.Variants.Option.Value;
 
 /**
  * How many results to actually show per search. Kept separate from
@@ -23,7 +21,6 @@ type OptionValue = ProductDetail.Variants.Option.Value;
  * best available margin.
  */
 const SEARCH_DISPLAY_LIMIT = 20;
-const SEARCH_FETCH_LIMIT = 30;
 const SIMILAR_LIMIT = 12;
 
 /**
@@ -34,67 +31,112 @@ const SIMILAR_LIMIT = 12;
  * value stays serializable across the server/client boundary.
  */
 
-export async function searchProducts(input: {
+export interface ConversationTurnInput {
   query: string;
-  imageUrl?: string;
-  base64Image?: string;
+  /** A `data:` image URI straight from the composer's upload — Channel3 uploads and rewrites these server-side, so no separate base64 field is needed. */
+  imageDataUrl?: string;
   filters: SearchFilters;
-  pageToken?: string;
-}): Promise<{ products: ProductDetail[]; nextPageToken?: string | null }> {
-  const page = await channel3.products.search({
-    query: input.query || undefined,
-    image_url: input.imageUrl,
-    base64_image: input.base64Image,
+  /** Thread id from a previous turn in this chat; omit to start a new conversation. */
+  conversationId?: string | null;
+}
+
+export interface ConversationTurnResult {
+  conversationId: string;
+  /** The assistant's combined text reply, or `null` when the turn was tool-results-only. */
+  text: string | null;
+  /** Tap-ready follow-up prompts the agent offered after this reply. */
+  suggestions: string[];
+  products: Product[];
+}
+
+/**
+ * Runs one turn of Channel3's conversational shopping agent — the
+ * LLM-backed replacement for the old one-shot `products.search()` call. The
+ * agent decides internally whether/how to search the catalog (and may run
+ * more than one search per turn), so unlike `products.search` there's no
+ * `limit` to request up front; `filters` are pinned across every catalog
+ * search the agent performs this turn, keeping the brand allowlist and
+ * gender/availability/price defaults in force no matter how the agent
+ * phrases its own tool calls.
+ */
+export async function runConversationTurn(
+  input: ConversationTurnInput,
+): Promise<ConversationTurnResult> {
+  const parts: Array<{ type: "text"; text: string } | { type: "image"; url: string }> = [];
+  if (input.query.trim()) {
+    parts.push({ type: "text", text: input.query.trim() });
+  }
+  if (input.imageDataUrl) {
+    parts.push({ type: "image", url: input.imageDataUrl });
+  }
+
+  const turn = await channel3.conversations.createTurn({
+    message: { role: "user", parts },
+    conversation_id: input.conversationId ?? undefined,
     filters: await restrictToAllowedBrands(input.filters),
-    page_token: input.pageToken,
-    limit: SEARCH_FETCH_LIMIT,
   });
-  // Channel3's own `price` filter matches if ANY offer satisfies it (same
-  // "any of" semantics as brand_ids), so a product can pass while its
-  // actually-displayed price sits outside the requested range. Re-check the
-  // real lead-offer price directly rather than trusting the upstream filter
-  // alone.
+
+  // Same "any offer/brand satisfies it" upstream semantics as
+  // `products.search` (see `isWithinDisplayedPriceRange` /
+  // `filterToAllowedDisplayBrand`) apply to whatever the agent's own catalog
+  // tool calls return, so the same belt-and-suspenders re-check is needed here.
   const priceRange = input.filters.price
     ? { minPrice: input.filters.price.min_price, maxPrice: input.filters.price.max_price }
     : null;
-  const products = filterToAllowedDisplayBrand(page.products)
+
+  const textParts: string[] = [];
+  const rawProducts: Product[] = [];
+  for (const part of turn.message.parts ?? []) {
+    if (part.type === "text") {
+      textParts.push(part.text);
+    } else if (part.type === "tool" && part.output?.products) {
+      rawProducts.push(...part.output.products);
+    }
+  }
+
+  const products = filterToAllowedDisplayBrand(rawProducts)
     .filter((product) => !priceRange || isWithinDisplayedPriceRange(product.offers, priceRange))
     .slice(0, SEARCH_DISPLAY_LIMIT);
-  return { products, nextPageToken: page.next_page_token };
+
+  return {
+    conversationId: turn.conversation_id,
+    text: textParts.length > 0 ? textParts.join("\n\n") : null,
+    suggestions: turn.message.suggestions ?? [],
+    products,
+  };
 }
 
 export async function findSimilarProducts(input: {
   productId: string;
   limit: number;
   filters?: SearchFilters;
-}): Promise<ProductDetail[]> {
+}): Promise<Product[]> {
   const page = await channel3.products.findSimilar({
     product_id: input.productId,
     limit: input.limit || SIMILAR_LIMIT,
     filters: await restrictToAllowedBrands(input.filters ?? {}),
   });
-  return filterToAllowedDisplayBrand(page.products);
+  return filterToAllowedDisplayBrand(page.data);
 }
 
 export async function resolveVariant(input: {
-  product: ProductDetail;
+  product: Product;
   optionName: string;
   value: OptionValue;
   selection: Record<string, string>;
-}): Promise<ProductDetail> {
+}): Promise<Product> {
   // A color-as-product swap: this value belongs to a different product family
   // member entirely — navigate by fetching that product, not by re-resolving.
   // Reject the swap (keep the current product) if it lands outside the
   // curated brand list.
   if (input.value.product_id && input.value.product_id !== input.product.id) {
-    const swapped = await channel3.products.retrieve(input.value.product_id);
+    const swapped = await channel3.products.retrieve({ product_id: input.value.product_id });
     return isAllowedBrandName(swapped.brands?.[0]?.name) ? swapped : input.product;
   }
-  const query: Record<string, string> = {};
-  for (const [name, label] of Object.entries(input.selection)) {
-    query[`option_${name}`] = label;
-  }
-  const resolved = await channel3.products.retrieve(input.product.id, undefined, { query });
+  const resolved = await channel3.products.retrieve({
+    product_id: input.product.id,
+    selected_options: input.selection,
+  });
   return isAllowedBrandName(resolved.brands?.[0]?.name) ? resolved : input.product;
 }
 
@@ -107,7 +149,7 @@ export async function searchCategoriesAction(query: string): Promise<CategorySum
 }
 
 export async function getCategoryAction(slug: string): Promise<Category> {
-  return channel3.categories.retrieve(slug);
+  return channel3.categories.retrieve({ slug });
 }
 
 /**
@@ -117,10 +159,13 @@ export async function getCategoryAction(slug: string): Promise<Category> {
  */
 export async function getProductDetail(
   id: string,
-  optionParams: Record<string, string> = {},
-): Promise<ProductDetail | null> {
+  selectedOptions: Record<string, string> = {},
+): Promise<Product | null> {
   try {
-    const product = await channel3.products.retrieve(id, undefined, { query: optionParams });
+    const product = await channel3.products.retrieve({
+      product_id: id,
+      selected_options: selectedOptions,
+    });
     return isAllowedBrandName(product.brands?.[0]?.name) ? product : null;
   } catch {
     return null;

@@ -4,13 +4,13 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import type { ProductDetail } from "@channel3/sdk/resources";
+import type { Product } from "@channel3/sdk/resources";
 
 import { findSimilarProducts, resolveVariant } from "@/app/actions";
 import { ProductDetails } from "@/components/product-details";
 import { useVariantSelection } from "@/hooks/use-variant-selection";
 
-export function ProductPageClient({ product: initialProduct }: { product: ProductDetail }) {
+export function ProductPageClient({ product: initialProduct }: { product: Product }) {
   const router = useRouter();
 
   const { product, selection, isResolving, select } = useVariantSelection({

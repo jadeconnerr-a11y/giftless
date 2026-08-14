@@ -1,6 +1,6 @@
 import * as React from "react";
 import { ImageOff } from "lucide-react";
-import type { ProductDetail } from "@channel3/sdk/resources";
+import type { OptionValue, Product } from "@channel3/sdk/resources";
 
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -16,14 +16,12 @@ import {
 } from "@/lib/format";
 import { swatchOption } from "@/lib/variants";
 
-type OptionValue = ProductDetail.Variants.Option.Value;
-
 /** How many swatches to show inline before collapsing the rest into a "+N". */
 const MAX_SWATCHES = 10;
 
 export interface ProductCardProps extends Omit<React.ComponentProps<"div">, "onSelect"> {
   /** The product to display. Works with both search hits and detail responses. */
-  product: ProductDetail;
+  product: Product;
   /**
    * Destination URL for the card. When set, the image and title render as a real
    * `<a href>` (crawlable, middle/cmd-clickable); a plain left-click still calls
@@ -31,7 +29,7 @@ export interface ProductCardProps extends Omit<React.ComponentProps<"div">, "onS
    */
   href?: string;
   /** Called when the card is activated (e.g. to open a product detail view). */
-  onSelect?: (product: ProductDetail) => void;
+  onSelect?: (product: Product) => void;
   /**
    * Called when the card is hovered, focused, or touched — before activation.
    * Router-agnostic prefetch hook: wire it to your framework's route preloader
@@ -39,7 +37,7 @@ export interface ProductCardProps extends Omit<React.ComponentProps<"div">, "onS
    * destination is warm by the time the user clicks. Fires at most once per
    * pointer entry/focus.
    */
-  onPreload?: (product: ProductDetail) => void;
+  onPreload?: (product: Product) => void;
   /**
    * Called when a color swatch is clicked. Navigate to `value.product_id` (the
    * variant's own product) when set. Falls back to {@link ProductCardProps.onSelect}.
