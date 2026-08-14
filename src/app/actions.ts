@@ -86,11 +86,20 @@ export async function runConversationTurn(
 
   const textParts: string[] = [];
   const rawProducts: Product[] = [];
+  const seenProductIds = new Set<string>();
   for (const part of turn.message.parts ?? []) {
     if (part.type === "text") {
       textParts.push(part.text);
     } else if (part.type === "tool" && part.output?.products) {
-      rawProducts.push(...part.output.products);
+      // The agent may run more than one catalog search per turn, and the
+      // same product can come back from more than one of them — dedupe by id
+      // so it isn't shown (and keyed) twice in the grid.
+      for (const product of part.output.products) {
+        if (!seenProductIds.has(product.id)) {
+          seenProductIds.add(product.id);
+          rawProducts.push(product);
+        }
+      }
     }
   }
 

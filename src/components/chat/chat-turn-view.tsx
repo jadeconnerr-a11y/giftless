@@ -68,9 +68,9 @@ export const ChatTurnView = React.forwardRef<HTMLDivElement, ChatTurnViewProps>(
             ) : null}
             {isLast && turn.status === "done" && turn.suggestions && turn.suggestions.length > 0 ? (
               <div className="flex flex-wrap gap-2">
-                {turn.suggestions.map((suggestion) => (
+                {turn.suggestions.map((suggestion, index) => (
                   <button
-                    key={suggestion}
+                    key={`${suggestion}-${index}`}
                     type="button"
                     onClick={() => onSuggestionSelect?.(suggestion)}
                     className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
