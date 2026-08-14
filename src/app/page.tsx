@@ -9,7 +9,7 @@ import { Composer, type ComposerSubmitInput } from "@/components/chat/composer";
 import { EmptyState } from "@/components/chat/empty-state";
 import { ProductFiltersRoot } from "@/components/product-filters";
 import { useChatStore } from "@/lib/chat-store";
-import { toSearchFilters } from "@/lib/search";
+import { extractBudgetFromQuery, toSearchFilters } from "@/lib/search";
 
 export default function Home() {
   const turns = useChatStore((state) => state.turns);
@@ -36,11 +36,26 @@ export default function Home() {
       status: "loading",
       products: [],
     });
+
+    // A stated budget in the chat text ("under $500") is only a soft signal
+    // to Channel3's semantic search, not an enforced cutoff — results can
+    // (and do) drift above it. Extract it into a real price filter so it's
+    // actually honored. Only fills in when the user hasn't already set a
+    // price filter explicitly via the Filters panel — that always wins.
+    let effectiveFilters = filters;
+    if (filters.price.minPrice == null && filters.price.maxPrice == null) {
+      const budget = extractBudgetFromQuery(query);
+      if (budget) {
+        effectiveFilters = { ...filters, price: budget };
+        setFilters(effectiveFilters);
+      }
+    }
+
     try {
       const { products } = await searchProducts({
         query,
         base64Image: image?.base64,
-        filters: toSearchFilters(filters),
+        filters: toSearchFilters(effectiveFilters),
       });
       updateTurn(id, { status: "done", products });
     } catch {

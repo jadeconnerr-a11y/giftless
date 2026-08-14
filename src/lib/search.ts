@@ -390,6 +390,78 @@ function toDimensionsFilter(dimensions: DimensionsFilter): NonNullable<SearchFil
   };
 }
 
+/** A price constraint pulled out of free text; either bound may be absent. */
+export interface ExtractedBudget {
+  minPrice: number | null;
+  maxPrice: number | null;
+}
+
+/**
+ * Best-effort extraction of a price constraint from a chat query like
+ * "under $500", "budget of $200", "$50-$100", or "over $75".
+ *
+ * The query text is sent to Channel3 as semantic search — on its own, that
+ * treats "under $500" as a soft signal for the ranking model, not a hard
+ * cutoff, so results can (and do) drift above the stated budget. Call this
+ * alongside the query and merge a non-null result into the actual `price`
+ * filter so a stated budget is genuinely enforced, not just suggested.
+ *
+ * Returns `null` if no recognizable budget phrase is found — deliberately
+ * conservative (requires a `$` sign or an explicit budget/range keyword) to
+ * avoid misreading an unrelated number in the query as a price.
+ */
+export function extractBudgetFromQuery(query: string): ExtractedBudget | null {
+  const parseNum = (raw: string): number | null => {
+    const n = Number(raw.replace(/,/g, ""));
+    return Number.isFinite(n) ? n : null;
+  };
+
+  // "between $50 and $100" / "$50 to $100" / "$50-$100"
+  let m = query.match(/between\s*\$?([\d,]+(?:\.\d+)?)\s*(?:and|-|to)\s*\$?([\d,]+(?:\.\d+)?)/i);
+  if (!m) {
+    m = query.match(/\$([\d,]+(?:\.\d+)?)\s*(?:-|to)\s*\$?([\d,]+(?:\.\d+)?)/i);
+  }
+  if (m) {
+    const a = parseNum(m[1]);
+    const b = parseNum(m[2]);
+    if (a != null && b != null) {
+      return { minPrice: Math.min(a, b), maxPrice: Math.max(a, b) };
+    }
+  }
+
+  // "under/below/less than/no more than/up to/max $500"
+  m = query.match(
+    /(?:under|below|less than|no more than|up to|max(?:imum)?(?:\s+of)?)\s*\$?([\d,]+(?:\.\d+)?)/i,
+  );
+  if (!m) {
+    // "$500 or less" / "$500 or under" / "$500 and under"
+    m = query.match(/\$([\d,]+(?:\.\d+)?)\s*(?:or less|or under|and under)/i);
+  }
+  if (m) {
+    const val = parseNum(m[1]);
+    if (val != null) return { minPrice: null, maxPrice: val };
+  }
+
+  // "over/above/more than/at least/min $500"
+  m = query.match(/(?:over|above|more than|at least|min(?:imum)?(?:\s+of)?)\s*\$?([\d,]+(?:\.\d+)?)/i);
+  if (m) {
+    const val = parseNum(m[1]);
+    if (val != null) return { minPrice: val, maxPrice: null };
+  }
+
+  // "budget of $500" / "budget: $500" / "$500 budget"
+  m = query.match(/budget\s*(?:of|is|:)?\s*\$?([\d,]+(?:\.\d+)?)/i);
+  if (!m) {
+    m = query.match(/\$([\d,]+(?:\.\d+)?)\s*budget/i);
+  }
+  if (m) {
+    const val = parseNum(m[1]);
+    if (val != null) return { minPrice: null, maxPrice: val };
+  }
+
+  return null;
+}
+
 /**
  * Convert the UI filter state into the SDK {@link SearchFilters} payload,
  * dropping empty facets so the request stays minimal. Call this on your server

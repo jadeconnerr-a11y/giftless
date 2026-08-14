@@ -160,3 +160,30 @@ export function leadOffer(offers: ReadonlyArray<ProductOffer> | undefined): Prod
 export function isSoldOut(offers: ReadonlyArray<ProductOffer> | undefined): boolean {
   return Boolean(offers && offers.length > 0 && !offers.some((o) => isInStock(o.availability)));
 }
+
+/**
+ * Whether a product's *displayed* price (its {@link leadOffer}, the same one
+ * shown on the card) actually falls within a price filter's bounds.
+ *
+ * Channel3's own `price` filter matches if ANY offer on the product
+ * satisfies it, similar to how `brand_ids` matches if any of a product's
+ * brands does — so a product with a cheap out-of-stock offer and an
+ * expensive in-stock one can pass the filter while displaying (and selling
+ * at) a price outside the requested range. This checks the actual
+ * lead-offer price directly, the same belt-and-suspenders pattern as
+ * {@link filterToAllowedDisplayBrand} for brands.
+ *
+ * Returns `true` (doesn't exclude) when there's no lead offer to check —
+ * can't penalize a product for missing price data.
+ */
+export function isWithinDisplayedPriceRange(
+  offers: ReadonlyArray<ProductOffer> | undefined,
+  range: { minPrice?: number | null; maxPrice?: number | null },
+): boolean {
+  const offer = leadOffer(offers);
+  if (!offer) return true;
+  const price = offer.price.price;
+  if (range.minPrice != null && price < range.minPrice) return false;
+  if (range.maxPrice != null && price > range.maxPrice) return false;
+  return true;
+}

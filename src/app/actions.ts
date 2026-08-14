@@ -5,6 +5,7 @@ import type { Category, CategorySummary, ProductDetail, SearchFilters } from "@c
 import { channel3 } from "@/lib/channel3";
 import { restrictToAllowedBrands } from "@/lib/allowed-brand-ids";
 import { filterToAllowedDisplayBrand, isAllowedBrandName } from "@/lib/allowed-brands";
+import { isWithinDisplayedPriceRange } from "@/lib/format";
 
 type OptionValue = ProductDetail.Variants.Option.Value;
 
@@ -48,7 +49,17 @@ export async function searchProducts(input: {
     page_token: input.pageToken,
     limit: SEARCH_FETCH_LIMIT,
   });
-  const products = filterToAllowedDisplayBrand(page.products).slice(0, SEARCH_DISPLAY_LIMIT);
+  // Channel3's own `price` filter matches if ANY offer satisfies it (same
+  // "any of" semantics as brand_ids), so a product can pass while its
+  // actually-displayed price sits outside the requested range. Re-check the
+  // real lead-offer price directly rather than trusting the upstream filter
+  // alone.
+  const priceRange = input.filters.price
+    ? { minPrice: input.filters.price.min_price, maxPrice: input.filters.price.max_price }
+    : null;
+  const products = filterToAllowedDisplayBrand(page.products)
+    .filter((product) => !priceRange || isWithinDisplayedPriceRange(product.offers, priceRange))
+    .slice(0, SEARCH_DISPLAY_LIMIT);
   return { products, nextPageToken: page.next_page_token };
 }
 
