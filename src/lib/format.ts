@@ -139,13 +139,50 @@ export function pickHoverImage(
   return candidates[0];
 }
 
-/** Lowest-priced offer, preferring in-stock merchants. */
+/**
+ * Ceiling above which a price is treated as corrupted upstream catalog data
+ * rather than a genuine (if expensive) gift. Channel3's catalog occasionally
+ * surfaces a garbled price for one specific merchant offer — e.g. a real
+ * ~$490 handbag listed as $463,200 — while sibling offers for the same
+ * product (or the same listing from a different merchant) show a normal
+ * price. $50,000 sits well above anything this app expects to recommend,
+ * including genuine luxury goods, so it only catches the outliers.
+ */
+const MAX_PLAUSIBLE_PRICE = 50_000;
+
+/** Whether a price looks like real catalog data rather than corrupted upstream data (see {@link MAX_PLAUSIBLE_PRICE}). */
+export function isPlausiblePrice(price: Price): boolean {
+  return price.price > 0 && price.price <= MAX_PLAUSIBLE_PRICE;
+}
+
+/**
+ * Whether any offer for a product has a plausible price. Products where
+ * *every* offer looks corrupted are excluded outright elsewhere rather than
+ * displaying a garbled price as if it were genuine.
+ */
+export function hasPlausibleOffer(offers: ReadonlyArray<ProductOffer> | undefined): boolean {
+  return Boolean(offers?.some((offer) => isPlausiblePrice(offer.price)));
+}
+
+/**
+ * Lowest-priced offer, preferring in-stock merchants — and, ahead of both,
+ * preferring a plausible price (see {@link isPlausiblePrice}) so a corrupted
+ * near-zero or wildly inflated offer doesn't win out over a normal one just
+ * for being "cheapest" or the only one in stock. Falls back to an
+ * implausible offer only when literally nothing else is available, so a
+ * product isn't left with no displayed price at all.
+ */
 export function leadOffer(offers: ReadonlyArray<ProductOffer> | undefined): ProductOffer | undefined {
   if (!offers || offers.length === 0) {
     return undefined;
   }
   const byPrice = [...offers].sort((a, b) => a.price.price - b.price.price);
-  return byPrice.find((offer) => isInStock(offer.availability)) ?? byPrice[0];
+  return (
+    byPrice.find((offer) => isInStock(offer.availability) && isPlausiblePrice(offer.price)) ??
+    byPrice.find((offer) => isPlausiblePrice(offer.price)) ??
+    byPrice.find((offer) => isInStock(offer.availability)) ??
+    byPrice[0]
+  );
 }
 
 /** True when offers exist but none are in stock. */

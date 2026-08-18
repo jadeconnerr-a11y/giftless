@@ -3,7 +3,7 @@ import "server-only";
 import type { AssistantMessage, Product, SearchFilters } from "@channel3/sdk/resources";
 
 import { filterToAllowedDisplayBrand } from "@/lib/allowed-brands";
-import { isWithinDisplayedPriceRange } from "@/lib/format";
+import { hasPlausibleOffer, isWithinDisplayedPriceRange } from "@/lib/format";
 
 /**
  * How many results to actually show per turn. Post-processing (dedup,
@@ -70,7 +70,10 @@ export function buildUserMessageParts(
  * whatever the agent's own catalog tool calls return, so the same
  * belt-and-suspenders re-check is needed here. The agent may also run more
  * than one catalog search per turn, and the same product can come back from
- * more than one of them, so results are deduped by id first.
+ * more than one of them, so results are deduped by id first. Also drops any
+ * product whose every offer has an implausible price (see
+ * `hasPlausibleOffer`) — Channel3's catalog occasionally has a garbled price
+ * for a specific offer.
  */
 export function buildConversationTurnResult(
   conversationId: string,
@@ -94,6 +97,7 @@ export function buildConversationTurnResult(
   }
 
   const products = filterToAllowedDisplayBrand(rawProducts)
+    .filter((product) => hasPlausibleOffer(product.offers))
     .filter((product) => !priceRange || isWithinDisplayedPriceRange(product.offers, priceRange))
     .slice(0, SEARCH_DISPLAY_LIMIT);
 

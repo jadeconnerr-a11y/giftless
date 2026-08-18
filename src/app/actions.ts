@@ -5,6 +5,7 @@ import type { Category, CategorySummary, OptionValue, Product, SearchFilters } f
 import { channel3 } from "@/lib/channel3";
 import { restrictToAllowedBrands } from "@/lib/allowed-brand-ids";
 import { filterToAllowedDisplayBrand, isAllowedBrandName } from "@/lib/allowed-brands";
+import { hasPlausibleOffer } from "@/lib/format";
 import {
   buildConversationTurnResult,
   buildUserMessageParts,
@@ -68,7 +69,9 @@ export async function findSimilarProducts(input: {
     limit: input.limit || SIMILAR_LIMIT,
     filters: await restrictToAllowedBrands(input.filters ?? {}),
   });
-  return filterToAllowedDisplayBrand(page.data);
+  return filterToAllowedDisplayBrand(page.data).filter((product) =>
+    hasPlausibleOffer(product.offers),
+  );
 }
 
 export async function resolveVariant(input: {
@@ -107,7 +110,9 @@ export async function getCategoryAction(slug: string): Promise<Category> {
 /**
  * Full product detail for the PDP, with `option_<Name>` params re-resolving a
  * variant. Returns `null` (→ 404) for products outside the curated brand
- * list, so a stale or shared link can't surface one either.
+ * list, or where every offer has an implausible price (see
+ * `hasPlausibleOffer`) — Channel3's catalog occasionally has a garbled price
+ * for a specific offer, and showing that as if genuine is worse than a 404.
  */
 export async function getProductDetail(
   id: string,
@@ -118,7 +123,10 @@ export async function getProductDetail(
       product_id: id,
       selected_options: selectedOptions,
     });
-    return isAllowedBrandName(product.brands?.[0]?.name) ? product : null;
+    if (!isAllowedBrandName(product.brands?.[0]?.name) || !hasPlausibleOffer(product.offers)) {
+      return null;
+    }
+    return product;
   } catch {
     return null;
   }

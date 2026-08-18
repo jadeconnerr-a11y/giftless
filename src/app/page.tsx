@@ -45,15 +45,17 @@ export default function Home() {
     // A stated budget in the chat text ("under $500") is only a soft signal
     // to Channel3's semantic search, not an enforced cutoff — results can
     // (and do) drift above it. Extract it into a real price filter so it's
-    // actually honored. Only fills in when the user hasn't already set a
-    // price filter explicitly via the Filters panel — that always wins.
+    // actually honored. A freshly-stated budget always replaces whatever
+    // price filter was already active (from an earlier turn, or the Filters
+    // panel) — otherwise a follow-up like "over $1000 is fine" or "actually
+    // under $200 now" would be silently fought by a stale cap, producing the
+    // confusing result of the assistant naming specific pricier options while
+    // the grid shows "No products found" because they got filtered back out.
     let effectiveFilters = filters;
-    if (filters.price.minPrice == null && filters.price.maxPrice == null) {
-      const budget = extractBudgetFromQuery(query);
-      if (budget) {
-        effectiveFilters = { ...filters, price: budget };
-        setFilters(effectiveFilters);
-      }
+    const budget = extractBudgetFromQuery(query);
+    if (budget) {
+      effectiveFilters = { ...filters, price: budget };
+      setFilters(effectiveFilters);
     }
 
     await streamConversationTurn(
