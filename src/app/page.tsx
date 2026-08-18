@@ -3,13 +3,14 @@
 import * as React from "react";
 import { Gift, SquarePen } from "lucide-react";
 
-import { getCategoryAction, runConversationTurn, searchCategoriesAction } from "@/app/actions";
+import { getCategoryAction, searchCategoriesAction } from "@/app/actions";
 import { ChatTurnView } from "@/components/chat/chat-turn-view";
 import { Composer, type ComposerHandle, type ComposerSubmitInput } from "@/components/chat/composer";
 import { EmptyState } from "@/components/chat/empty-state";
 import { ProductFiltersRoot } from "@/components/product-filters";
 import { useChatStore } from "@/lib/chat-store";
 import { extractBudgetFromQuery, toSearchFilters } from "@/lib/search";
+import { streamConversationTurn } from "@/lib/stream-conversation-turn";
 
 export default function Home() {
   const turns = useChatStore((state) => state.turns);
@@ -55,23 +56,29 @@ export default function Home() {
       }
     }
 
-    try {
-      const result = await runConversationTurn({
+    await streamConversationTurn(
+      {
         query,
         imageDataUrl: image?.dataUrl,
         filters: toSearchFilters(effectiveFilters),
         conversationId,
-      });
-      setConversationId(result.conversationId);
-      updateTurn(id, {
-        status: "done",
-        products: result.products,
-        assistantText: result.text,
-        suggestions: result.suggestions,
-      });
-    } catch {
-      updateTurn(id, { status: "error" });
-    }
+      },
+      {
+        // Shows the agent's reply typing in live instead of a blank "Searching…"
+        // for the whole (often tens-of-seconds) turn.
+        onTextUpdate: (text) => updateTurn(id, { assistantText: text }),
+        onResult: (result) => {
+          setConversationId(result.conversationId);
+          updateTurn(id, {
+            status: "done",
+            products: result.products,
+            assistantText: result.text,
+            suggestions: result.suggestions,
+          });
+        },
+        onError: () => updateTurn(id, { status: "error" }),
+      },
+    );
   };
 
   return (

@@ -5,22 +5,14 @@ import type { Category, CategorySummary, OptionValue, Product, SearchFilters } f
 import { channel3 } from "@/lib/channel3";
 import { restrictToAllowedBrands } from "@/lib/allowed-brand-ids";
 import { filterToAllowedDisplayBrand, isAllowedBrandName } from "@/lib/allowed-brands";
-import { isWithinDisplayedPriceRange } from "@/lib/format";
+import {
+  buildConversationTurnResult,
+  buildUserMessageParts,
+  type ConversationTurnInput,
+  type ConversationTurnResult,
+  priceRangeFromFilters,
+} from "@/lib/conversation-turn";
 
-/**
- * How many results to actually show per search. Kept separate from
- * `SEARCH_FETCH_LIMIT` (the raw request to Channel3) because results still
- * go through `filterToAllowedDisplayBrand` afterward — fetching only
- * `SEARCH_DISPLAY_LIMIT` up front would mean that post-filter (and the
- * gender/availability/brand filters) is squeezing an already-small batch,
- * making "No products found" far more likely than it needs to be.
- *
- * `SEARCH_FETCH_LIMIT` is capped at 30 by the Channel3 API itself, so the
- * buffer over `SEARCH_DISPLAY_LIMIT` is thinner than it'd ideally be —
- * occasionally fewer than 20 survive the post-filter, but this is still the
- * best available margin.
- */
-const SEARCH_DISPLAY_LIMIT = 20;
 const SIMILAR_LIMIT = 12;
 
 /**
@@ -31,23 +23,7 @@ const SIMILAR_LIMIT = 12;
  * value stays serializable across the server/client boundary.
  */
 
-export interface ConversationTurnInput {
-  query: string;
-  /** A `data:` image URI straight from the composer's upload — Channel3 uploads and rewrites these server-side, so no separate base64 field is needed. */
-  imageDataUrl?: string;
-  filters: SearchFilters;
-  /** Thread id from a previous turn in this chat; omit to start a new conversation. */
-  conversationId?: string | null;
-}
-
-export interface ConversationTurnResult {
-  conversationId: string;
-  /** The assistant's combined text reply, or `null` when the turn was tool-results-only. */
-  text: string | null;
-  /** Tap-ready follow-up prompts the agent offered after this reply. */
-  suggestions: string[];
-  products: Product[];
-}
+export type { ConversationTurnInput, ConversationTurnResult };
 
 /**
  * Runs one turn of Channel3's conversational shopping agent — the
@@ -58,17 +34,16 @@ export interface ConversationTurnResult {
  * search the agent performs this turn, keeping the brand allowlist and
  * gender/availability/price defaults in force no matter how the agent
  * phrases its own tool calls.
+ *
+ * This is the buffered (non-streaming) form — the app itself uses the
+ * streaming `/api/conversation-turn` route (see `buildConversationTurnResult`)
+ * for a live "typing" reply, but this is kept as a simpler alternative for
+ * any other caller that just wants the final result in one shot.
  */
 export async function runConversationTurn(
   input: ConversationTurnInput,
 ): Promise<ConversationTurnResult> {
-  const parts: Array<{ type: "text"; text: string } | { type: "image"; url: string }> = [];
-  if (input.query.trim()) {
-    parts.push({ type: "text", text: input.query.trim() });
-  }
-  if (input.imageDataUrl) {
-    parts.push({ type: "image", url: input.imageDataUrl });
-  }
+  const parts = buildUserMessageParts(input.query, input.imageDataUrl);
 
   const turn = await channel3.conversations.createTurn({
     message: { role: "user", parts },
@@ -76,43 +51,11 @@ export async function runConversationTurn(
     filters: await restrictToAllowedBrands(input.filters),
   });
 
-  // Same "any offer/brand satisfies it" upstream semantics as
-  // `products.search` (see `isWithinDisplayedPriceRange` /
-  // `filterToAllowedDisplayBrand`) apply to whatever the agent's own catalog
-  // tool calls return, so the same belt-and-suspenders re-check is needed here.
-  const priceRange = input.filters.price
-    ? { minPrice: input.filters.price.min_price, maxPrice: input.filters.price.max_price }
-    : null;
-
-  const textParts: string[] = [];
-  const rawProducts: Product[] = [];
-  const seenProductIds = new Set<string>();
-  for (const part of turn.message.parts ?? []) {
-    if (part.type === "text") {
-      textParts.push(part.text);
-    } else if (part.type === "tool" && part.output?.products) {
-      // The agent may run more than one catalog search per turn, and the
-      // same product can come back from more than one of them — dedupe by id
-      // so it isn't shown (and keyed) twice in the grid.
-      for (const product of part.output.products) {
-        if (!seenProductIds.has(product.id)) {
-          seenProductIds.add(product.id);
-          rawProducts.push(product);
-        }
-      }
-    }
-  }
-
-  const products = filterToAllowedDisplayBrand(rawProducts)
-    .filter((product) => !priceRange || isWithinDisplayedPriceRange(product.offers, priceRange))
-    .slice(0, SEARCH_DISPLAY_LIMIT);
-
-  return {
-    conversationId: turn.conversation_id,
-    text: textParts.length > 0 ? textParts.join("\n\n") : null,
-    suggestions: turn.message.suggestions ?? [],
-    products,
-  };
+  return buildConversationTurnResult(
+    turn.conversation_id,
+    turn.message,
+    priceRangeFromFilters(input.filters),
+  );
 }
 
 export async function findSimilarProducts(input: {

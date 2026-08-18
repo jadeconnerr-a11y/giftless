@@ -17,8 +17,12 @@ const SCHEME_LINK = /\[([^\]]+)\]\(([a-z][a-z0-9+.-]*):([^)\s]+)\)/gi;
  * instead of leaking the raw markdown/URI syntax. Plain `http(s):` links are
  * rendered as ordinary external anchors; any other scheme falls back to its
  * label text alone rather than showing unresolved link syntax.
+ *
+ * Pass `streaming` while the reply is still arriving (mid-turn) to append a
+ * blinking cursor, so a live "typing" reply reads as active rather than a
+ * plain paragraph that happens to be growing.
  */
-export function AssistantMessage({ text }: { text: string }) {
+export function AssistantMessage({ text, streaming = false }: { text: string; streaming?: boolean }) {
   const nodes: React.ReactNode[] = [];
   let lastIndex = 0;
   let key = 0;
@@ -64,9 +68,17 @@ export function AssistantMessage({ text }: { text: string }) {
   }
 
   // `text` may join multiple reply parts with blank lines (see
-  // `runConversationTurn`); a plain `<p>` collapses that whitespace and runs
-  // them together, so preserve line breaks explicitly.
+  // `buildConversationTurnResult`); a plain `<p>` collapses that whitespace
+  // and runs them together, so preserve line breaks explicitly.
   return (
-    <p className="max-w-2xl whitespace-pre-line text-sm leading-relaxed text-foreground">{nodes}</p>
+    <p className="max-w-2xl whitespace-pre-line text-sm leading-relaxed text-foreground">
+      {nodes}
+      {streaming ? (
+        <span
+          aria-hidden
+          className="ml-0.5 inline-block h-3.5 w-[2px] animate-pulse bg-foreground/70 align-middle"
+        />
+      ) : null}
+    </p>
   );
 }

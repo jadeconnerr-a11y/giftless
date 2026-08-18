@@ -52,8 +52,8 @@ export const ChatTurnView = React.forwardRef<HTMLDivElement, ChatTurnViewProps>(
               <Gift className="size-3.5" />
               <span>{resultsNote(turn)}</span>
             </div>
-            {turn.status === "done" && turn.assistantText ? (
-              <AssistantMessage text={turn.assistantText} />
+            {turn.status !== "error" && turn.assistantText ? (
+              <AssistantMessage text={turn.assistantText} streaming={turn.status === "loading"} />
             ) : null}
             {turn.status !== "error" ? (
               <ProductGrid

@@ -2,6 +2,7 @@ import "server-only";
 
 import { channel3 } from "@/lib/channel3";
 import { isAllowedBrandName } from "@/lib/allowed-brands";
+import { excludeBlockedWebsites } from "@/lib/excluded-websites";
 import type { SearchFilters } from "@channel3/sdk/resources";
 
 /**
@@ -60,19 +61,25 @@ export function getAllowedBrandIds(): Promise<Set<string>> {
 /**
  * Narrows `filters.brand_ids` to the allowlist, defaulting to the full
  * allowlist when the caller didn't request specific brands. Falls back to
- * the caller's filters unchanged only if the catalog walk itself fails
- * (e.g. a transient Channel3 API error) — a lookup hiccup shouldn't take
- * search down entirely.
+ * the caller's filters unchanged (aside from the website blocklist below) only
+ * if the catalog walk itself fails (e.g. a transient Channel3 API error) — a
+ * lookup hiccup shouldn't take search down entirely.
+ *
+ * Also merges in {@link EXCLUDED_WEBSITE_DOMAINS} via
+ * {@link excludeBlockedWebsites} — this is the single choke point every
+ * search (one-shot or conversational) passes its filters through before
+ * they reach Channel3, so it's the natural home for both allow- and
+ * block-lists rather than making every caller remember two calls.
  */
 export async function restrictToAllowedBrands(filters: SearchFilters): Promise<SearchFilters> {
   let allowed: Set<string>;
   try {
     allowed = await getAllowedBrandIds();
   } catch {
-    return filters;
+    return excludeBlockedWebsites(filters);
   }
   const brandIds = filters.brand_ids?.length
     ? filters.brand_ids.filter((id) => allowed.has(id))
     : Array.from(allowed);
-  return { ...filters, brand_ids: brandIds };
+  return excludeBlockedWebsites({ ...filters, brand_ids: brandIds });
 }
