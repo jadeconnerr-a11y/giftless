@@ -61,6 +61,19 @@ export function buildUserMessageParts(
 }
 
 /**
+ * Shown instead of the agent's own text when its tool call(s) actually found
+ * products but every one of them got filtered out (see
+ * `buildConversationTurnResult`). The agent's original reply names and links
+ * specific items by title — e.g. "I found the Toughknit Easy Tee..." — with
+ * no way to know they're about to vanish from the display, so showing it
+ * as-is next to an empty grid reads as broken. This is deliberately vague
+ * about *why* (brand allowlist vs. price sanity check vs. price range) since
+ * any of those can be the actual cause.
+ */
+const FILTERED_TO_EMPTY_TEXT =
+  "I found a few options, but none of them are from brands or in a price range GIFTLESS currently carries. Try describing it a different way, or ask about a different brand and I'll take another look.";
+
+/**
  * Turns a Channel3 `AssistantMessage` (from either the buffered `createTurn`
  * or the final `turn.completed` event of `createTurnStream`) into the shape
  * the UI consumes.
@@ -74,6 +87,19 @@ export function buildUserMessageParts(
  * product whose every offer has an implausible price (see
  * `hasPlausibleOffer`) — Channel3's catalog occasionally has a garbled price
  * for a specific offer.
+ *
+ * Channel3's own docs say a turn's `filters` are "applied to every product
+ * search in this turn," but in practice the agent's tool calls can still
+ * return products from brands well outside a pinned `brand_ids` allowlist
+ * (confirmed directly against the API — pinning `brand_ids` to an unrelated
+ * brand didn't stop the agent's own `search_products` tool from returning 19
+ * products from the brand the user actually asked about). So this filter is
+ * doing real, necessary work, not just redundant paranoia — and when it
+ * strips *everything* the agent found, the agent's own text still names
+ * those now-invisible products (with dead `cp:` links), which reads as
+ * broken. In that case the text is replaced with a clear explanation instead
+ * (see `FILTERED_TO_EMPTY_TEXT`); the suggestions are left as-is since
+ * they're still coherent follow-up prompts.
  */
 export function buildConversationTurnResult(
   conversationId: string,
@@ -101,9 +127,16 @@ export function buildConversationTurnResult(
     .filter((product) => !priceRange || isWithinDisplayedPriceRange(product.offers, priceRange))
     .slice(0, SEARCH_DISPLAY_LIMIT);
 
+  const filteredEverythingOut = rawProducts.length > 0 && products.length === 0;
+  const text = filteredEverythingOut
+    ? FILTERED_TO_EMPTY_TEXT
+    : textParts.length > 0
+      ? textParts.join("\n\n")
+      : null;
+
   return {
     conversationId,
-    text: textParts.length > 0 ? textParts.join("\n\n") : null,
+    text,
     suggestions: message.suggestions ?? [],
     products,
   };
